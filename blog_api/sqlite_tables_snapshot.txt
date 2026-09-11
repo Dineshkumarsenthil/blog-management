@@ -1,0 +1,17 @@
+--- users ---
+['id', 'username', 'email', 'hashed_password', 'created_at']
+(1, 'alice', 'alice@example.com', '$2b$12$mDewFWHURnZeZH0i92MxJ.jjUyg5Wf.9VSPA.9Ibw4R2IN8v2wNNq', '2026-09-10 06:56:43')
+(2, 'bob', 'bob@example.com', '$2b$12$rTmUAka7r9EHEyFhJBDXnOddkAqdDr4zXGVQEqmwdiscvbmrqfaCC', '2026-09-10 06:56:44')
+
+--- posts ---
+['id', 'title', 'content', 'author_id', 'created_at']
+(1, 'My First Post (Updated)', 'Hello world, this is my first blog post.', 1, '2026-09-10 06:56:56')
+
+--- comments ---
+['id', 'post_id', 'user_id', 'text', 'created_at']
+(1, 1, 2, 'Great post, Alice!', '2026-09-10 06:57:02')
+
+--- likes ---
+['id', 'post_id', 'user_id']
+(1, 1, 2)
+
