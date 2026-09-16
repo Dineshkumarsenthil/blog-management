@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+blog.db
+blog_sample.db
+.env
+media/

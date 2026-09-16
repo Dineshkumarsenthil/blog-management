@@ -1,0 +1,96 @@
+{
+  "info": {
+    "name": "Blog Management API",
+    "description": "Covers: create post with image, list posts with pagination, list posts with search, update post with image.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "post_id", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Create Post (with image)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": { "raw": "{{base_url}}/posts", "host": ["{{base_url}}"], "path": ["posts"] },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "title", "value": "My First Post With Image", "type": "text" },
+            { "key": "content", "value": "Testing the new image upload feature", "type": "text" },
+            { "key": "image", "type": "file", "src": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Posts - Pagination (page 1, limit 2)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/posts?page=1&limit=2",
+          "host": ["{{base_url}}"],
+          "path": ["posts"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "2" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Posts - Pagination (page 2, limit 2)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/posts?page=2&limit=2",
+          "host": ["{{base_url}}"],
+          "path": ["posts"],
+          "query": [
+            { "key": "page", "value": "2" },
+            { "key": "limit", "value": "2" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Posts - Search (FastAPI)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/posts?search=FastAPI",
+          "host": ["{{base_url}}"],
+          "path": ["posts"],
+          "query": [
+            { "key": "search", "value": "FastAPI" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Post (with image)",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/posts/{{post_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["posts", "{{post_id}}"]
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "title", "value": "Updated Title", "type": "text" },
+            { "key": "content", "value": "Updated content with a new image.", "type": "text" },
+            { "key": "image", "type": "file", "src": "" }
+          ]
+        }
+      }
+    }
+  ]
+}

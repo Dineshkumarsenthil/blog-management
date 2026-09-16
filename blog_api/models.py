@@ -35,6 +35,9 @@ class Post(Base):
     content = Column(Text, nullable=False)
     author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Stores the relative path to the uploaded cover image, e.g. "media/posts/<uuid>.jpg".
+    # Nullable because a post is not required to have a cover image.
+    image = Column(String(255), nullable=True)
 
     author = relationship("User", back_populates="posts")
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")

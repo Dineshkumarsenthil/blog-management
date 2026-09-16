@@ -1,7 +1,19 @@
-from typing import List
+import math
+from typing import List, Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
-from sqlalchemy import func
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +22,7 @@ import models
 import schemas
 from database import Base, SessionLocal, engine, get_db
 from notifications import notify_new_comment, notify_new_like
+from uploads import MEDIA_ROOT, delete_post_image, save_post_image
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -17,9 +30,16 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Blog Management API",
     description="A mini blogging system with posts, comments, likes and JWT auth.",
-    version="1.0.0",
+    version="1.1.0",
 )
 
+# Serve uploaded post images at /media/posts/<filename>
+app.mount("/media", StaticFiles(directory=str(MEDIA_ROOT)), name="media")
+
+
+# --------------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------------
 def get_post_or_404(db: Session, post_id: int) -> models.Post:
     post = db.query(models.Post).filter(models.Post.id == post_id).first()
     if not post:
@@ -42,6 +62,7 @@ def serialize_post(db: Session, post: models.Post) -> schemas.PostOut:
         created_at=post.created_at,
         like_count=like_count or 0,
         comment_count=comment_count or 0,
+        image_url=post.image,
     )
 
 
@@ -99,12 +120,21 @@ def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
 # --------------------------------------------------------------------------
 @app.post("/posts", response_model=schemas.PostOut, tags=["Posts"], status_code=201)
 def create_post(
-    post: schemas.PostCreate,
+    title: str = Form(..., min_length=1, max_length=200),
+    content: str = Form(..., min_length=1),
+    image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    """
+    Create a post. Accepts multipart/form-data so an optional cover image can
+    be attached alongside title/content. In Swagger, this shows up as regular
+    form fields (title, content) plus a file picker (image) — not a JSON body.
+    """
+    image_url = save_post_image(image)
+
     new_post = models.Post(
-        title=post.title, content=post.content, author_id=current_user.id
+        title=title, content=content, author_id=current_user.id, image=image_url
     )
     db.add(new_post)
     db.commit()
@@ -112,16 +142,46 @@ def create_post(
     return serialize_post(db, new_post)
 
 
-@app.get("/posts", response_model=List[schemas.PostOut], tags=["Posts"])
-def list_posts(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
+@app.get("/posts", response_model=schemas.PaginatedPosts, tags=["Posts"])
+def list_posts(
+    page: int = Query(1, ge=1, description="Page number, starting at 1"),
+    limit: int = Query(10, ge=1, le=100, description="Posts per page (max 100)"),
+    search: Optional[str] = Query(
+        None, min_length=1, description="Search posts by title or content"
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    List posts with pagination and optional search.
+    Example: GET /posts?page=2&limit=10&search=fastapi
+    Search and pagination compose together — search first narrows the result
+    set, then pagination slices that narrowed set.
+    """
+    query = db.query(models.Post)
+
+    if search:
+        like_pattern = f"%{search}%"
+        query = query.filter(
+            or_(models.Post.title.ilike(like_pattern), models.Post.content.ilike(like_pattern))
+        )
+
+    total = query.count()
+    total_pages = max(1, math.ceil(total / limit)) if total else 0
+
     posts = (
-        db.query(models.Post)
-        .order_by(models.Post.created_at.desc())
-        .offset(skip)
+        query.order_by(models.Post.created_at.desc())
+        .offset((page - 1) * limit)
         .limit(limit)
         .all()
     )
-    return [serialize_post(db, p) for p in posts]
+
+    return schemas.PaginatedPosts(
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        items=[serialize_post(db, p) for p in posts],
+    )
 
 
 @app.get("/posts/mine", response_model=List[schemas.PostOut], tags=["Posts"])
@@ -161,20 +221,34 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
 @app.put("/posts/{post_id}", response_model=schemas.PostOut, tags=["Posts"])
 def update_post(
     post_id: int,
-    post_update: schemas.PostUpdate,
+    title: Optional[str] = Form(None, min_length=1, max_length=200),
+    content: Optional[str] = Form(None, min_length=1),
+    image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    """
+    Update a post. Also multipart/form-data, so an owner can replace the
+    cover image the same way they set it on create. All fields are optional —
+    send only what you want to change. Uploading a new image replaces (and
+    deletes) the old one; title/content are left untouched if omitted.
+    """
     post = get_post_or_404(db, post_id)
     if post.author_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to update this post",
         )
-    if post_update.title is not None:
-        post.title = post_update.title
-    if post_update.content is not None:
-        post.content = post_update.content
+    if title is not None:
+        post.title = title
+    if content is not None:
+        post.content = content
+    if image is not None and image.filename:
+        new_image_url = save_post_image(image)
+        old_image_url = post.image
+        post.image = new_image_url
+        delete_post_image(old_image_url)
+
     db.commit()
     db.refresh(post)
     return serialize_post(db, post)
@@ -192,6 +266,7 @@ def delete_post(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to delete this post",
         )
+    delete_post_image(post.image)
     db.delete(post)
     db.commit()
     return None

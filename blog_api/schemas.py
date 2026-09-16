@@ -61,6 +61,11 @@ class LikeStatus(BaseModel):
 
 
 # ---------- Post ----------
+# NOTE: PostCreate/PostUpdate are no longer used to parse the request body directly.
+# Because the create/update endpoints now accept multipart/form-data (to support an
+# optional image file), title/content are read as individual Form(...) fields in
+# main.py. These two classes are kept for reference/documentation of the expected
+# fields and are still used internally for validation.
 class PostCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     content: str = Field(..., min_length=1)
@@ -81,7 +86,18 @@ class PostOut(BaseModel):
     created_at: datetime
     like_count: int = 0
     comment_count: int = 0
+    image_url: Optional[str] = None
 
 
 class PostDetailOut(PostOut):
     comments: List[CommentOut] = []
+
+
+class PaginatedPosts(BaseModel):
+    """Response wrapper for GET /posts with pagination + search."""
+
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    items: List[PostOut]
