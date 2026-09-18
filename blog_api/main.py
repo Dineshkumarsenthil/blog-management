@@ -16,10 +16,12 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqladmin import Admin, ModelView  # NEW
 
 import auth
 import models
 import schemas
+import subscriptions
 from database import Base, SessionLocal, engine, get_db
 from notifications import notify_new_comment, notify_new_like
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
@@ -27,14 +29,77 @@ from uploads import MEDIA_ROOT, delete_post_image, save_post_image
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Seed the three subscription plans (Basic/Premium/Pro) if they don't exist yet.
+with SessionLocal() as _db:
+    subscriptions.seed_plans(_db)
+
 app = FastAPI(
     title="Blog Management API",
-    description="A mini blogging system with posts, comments, likes and JWT auth.",
-    version="1.1.0",
+    description="A mini blogging system with posts, comments, likes, JWT auth, "
+    "and subscription-based feature limits.",
+    version="1.2.0",
 )
 
-# Serve uploaded post images at /media/posts/<filename>
+# Serve uploaded post images and generated invoices at /media/...
 app.mount("/media", StaticFiles(directory=str(MEDIA_ROOT)), name="media")
+
+
+# --------------------------------------------------------------------------
+# Admin dashboard (Django-admin-style) at /admin  # NEW
+# --------------------------------------------------------------------------
+admin = Admin(app, engine)
+
+
+class UserAdmin(ModelView, model=models.User):
+    name = "User"
+    name_plural = "Users"
+    column_list = [models.User.id, models.User.username, models.User.email, models.User.plan_id, models.User.created_at]
+    column_searchable_list = [models.User.username, models.User.email]
+
+
+class PostAdmin(ModelView, model=models.Post):
+    name = "Post"
+    name_plural = "Posts"
+    column_list = [models.Post.id, models.Post.title, models.Post.author_id, models.Post.created_at]
+    column_searchable_list = [models.Post.title]
+
+
+class SubscriptionPlanAdmin(ModelView, model=models.SubscriptionPlan):
+    name = "Subscription Plan"
+    name_plural = "Subscription Plans"
+    column_list = [
+        models.SubscriptionPlan.id,
+        models.SubscriptionPlan.name,
+        models.SubscriptionPlan.price,
+        models.SubscriptionPlan.max_posts,
+        models.SubscriptionPlan.max_images_per_post,
+        models.SubscriptionPlan.max_likes,
+        models.SubscriptionPlan.max_comments,
+        models.SubscriptionPlan.is_unlimited,
+    ]
+
+
+class BillingHistoryAdmin(ModelView, model=models.BillingHistory):
+    name = "Billing Record"
+    name_plural = "Billing History"
+    column_list = [
+        models.BillingHistory.id,
+        models.BillingHistory.user_id,
+        models.BillingHistory.plan_id,
+        models.BillingHistory.price,
+        models.BillingHistory.transaction_id,
+        models.BillingHistory.start_date,
+        models.BillingHistory.end_date,
+        models.BillingHistory.invoice_path,
+        models.BillingHistory.created_at,
+    ]
+    column_searchable_list = [models.BillingHistory.transaction_id]
+
+
+admin.add_view(UserAdmin)
+admin.add_view(PostAdmin)
+admin.add_view(SubscriptionPlanAdmin)
+admin.add_view(BillingHistoryAdmin)
 
 
 # --------------------------------------------------------------------------
@@ -99,6 +164,14 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="Username or email already registered",
         )
     db.refresh(new_user)
+
+    # Every user starts on the Basic plan until they subscribe to something else.
+    basic_plan = db.query(models.SubscriptionPlan).filter_by(name="Basic").first()
+    if basic_plan:
+        new_user.plan_id = basic_plan.id
+        db.commit()
+        db.refresh(new_user)
+
     return new_user
 
 
@@ -126,11 +199,9 @@ def create_post(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """
-    Create a post. Accepts multipart/form-data so an optional cover image can
-    be attached alongside title/content. In Swagger, this shows up as regular
-    form fields (title, content) plus a file picker (image) — not a JSON body.
-    """
+
+    subscriptions.check_post_limit(db, current_user)
+
     image_url = save_post_image(image)
 
     new_post = models.Post(
@@ -151,12 +222,7 @@ def list_posts(
     ),
     db: Session = Depends(get_db),
 ):
-    """
-    List posts with pagination and optional search.
-    Example: GET /posts?page=2&limit=10&search=fastapi
-    Search and pagination compose together — search first narrows the result
-    set, then pagination slices that narrowed set.
-    """
+
     query = db.query(models.Post)
 
     if search:
@@ -215,7 +281,20 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         c.username = username
         comment_list.append(c)
 
-    return schemas.PostDetailOut(**base.model_dump(), comments=comment_list)
+    extra_images = (
+        db.query(models.PostImage)
+        .filter(models.PostImage.post_id == post_id)
+        .order_by(models.PostImage.created_at.asc())
+        .all()
+    )
+    image_list = [
+        schemas.PostImageOut(
+            id=img.id, post_id=img.post_id, image_url=img.image, created_at=img.created_at
+        )
+        for img in extra_images
+    ]
+
+    return schemas.PostDetailOut(**base.model_dump(), comments=comment_list, images=image_list)
 
 
 @app.put("/posts/{post_id}", response_model=schemas.PostOut, tags=["Posts"])
@@ -227,12 +306,7 @@ def update_post(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """
-    Update a post. Also multipart/form-data, so an owner can replace the
-    cover image the same way they set it on create. All fields are optional —
-    send only what you want to change. Uploading a new image replaces (and
-    deletes) the old one; title/content are left untouched if omitted.
-    """
+
     post = get_post_or_404(db, post_id)
     if post.author_id != current_user.id:
         raise HTTPException(
@@ -267,9 +341,46 @@ def delete_post(
             detail="You do not have permission to delete this post",
         )
     delete_post_image(post.image)
+    for img in post.extra_images:
+        delete_post_image(img.image)
     db.delete(post)
     db.commit()
     return None
+
+
+@app.post(
+    "/posts/{post_id}/images",
+    response_model=schemas.PostImageOut,
+    tags=["Posts"],
+    status_code=201,
+)
+def add_post_image(
+    post_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    post = get_post_or_404(db, post_id)
+    if post.author_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this post",
+        )
+
+    subscriptions.check_image_limit(db, current_user, post, adding=1)
+
+    image_url = save_post_image(image)
+    new_image = models.PostImage(post_id=post.id, image=image_url)
+    db.add(new_image)
+    db.commit()
+    db.refresh(new_image)
+
+    return schemas.PostImageOut(
+        id=new_image.id,
+        post_id=new_image.post_id,
+        image_url=new_image.image,
+        created_at=new_image.created_at,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -289,6 +400,7 @@ def add_comment(
     current_user: models.User = Depends(auth.get_current_user),
 ):
     post = get_post_or_404(db, post_id)
+    subscriptions.check_comment_limit(db, current_user)
 
     new_comment = models.Comment(
         post_id=post_id, user_id=current_user.id, text=comment.text
@@ -352,6 +464,8 @@ def like_post(
             status_code=status.HTTP_400_BAD_REQUEST, detail="You already liked this post"
         )
 
+    subscriptions.check_like_limit(db, current_user)
+
     new_like = models.Like(post_id=post_id, user_id=current_user.id)
     db.add(new_like)
     db.commit()
@@ -398,3 +512,81 @@ def unlike_post(
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Blog Management API is running. Visit /docs for Swagger UI."}
+
+
+# --------------------------------------------------------------------------
+# Subscription & Billing routes
+# --------------------------------------------------------------------------
+def _billing_out(b: models.BillingHistory) -> schemas.BillingHistoryOut:
+    return schemas.BillingHistoryOut(
+        id=b.id,
+        user_id=b.user_id,
+        plan_id=b.plan_id,
+        plan_name=b.plan.name if b.plan else None,
+        price=b.price,
+        transaction_id=b.transaction_id,
+        start_date=b.start_date,
+        end_date=b.end_date,
+        invoice_url=b.invoice_path,
+        created_at=b.created_at,
+    )
+
+
+@app.get("/subscriptions/plans", response_model=List[schemas.SubscriptionPlanOut], tags=["Subscriptions"])
+def list_plans(db: Session = Depends(get_db)):
+    
+    return db.query(models.SubscriptionPlan).order_by(models.SubscriptionPlan.price.asc()).all()
+
+
+@app.post("/subscriptions/subscribe", response_model=schemas.BillingHistoryOut, tags=["Subscriptions"])
+def subscribe(
+    body: schemas.SubscribeRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+ 
+    billing = subscriptions.subscribe_user(db, current_user, body.plan_name)
+    return _billing_out(billing)
+
+
+@app.get("/subscriptions/me", response_model=schemas.UsageOut, tags=["Subscriptions"])
+def my_subscription(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Current user's active plan plus their live usage counts against its limits."""
+    plan = subscriptions.get_user_plan(db, current_user)
+    posts_used = db.query(func.count(models.Post.id)).filter(
+        models.Post.author_id == current_user.id
+    ).scalar() or 0
+    likes_used = db.query(func.count(models.Like.id)).filter(
+        models.Like.user_id == current_user.id
+    ).scalar() or 0
+    comments_used = db.query(func.count(models.Comment.id)).filter(
+        models.Comment.user_id == current_user.id
+    ).scalar() or 0
+
+    return schemas.UsageOut(
+        plan=plan, posts_used=posts_used, likes_used=likes_used, comments_used=comments_used
+    )
+
+
+@app.get("/billing/me", response_model=List[schemas.BillingHistoryOut], tags=["Billing"])
+def my_billing_history(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Current user's own billing/invoice history."""
+    rows = (
+        db.query(models.BillingHistory)
+        .filter(models.BillingHistory.user_id == current_user.id)
+        .order_by(models.BillingHistory.created_at.desc())
+        .all()
+    )
+    return [_billing_out(b) for b in rows]
+
+
+@app.get("/billing", response_model=List[schemas.BillingHistoryOut], tags=["Billing"])
+def all_billing_history(db: Session = Depends(get_db)):
+    rows = db.query(models.BillingHistory).order_by(models.BillingHistory.created_at.desc()).all()
+    return [_billing_out(b) for b in rows]

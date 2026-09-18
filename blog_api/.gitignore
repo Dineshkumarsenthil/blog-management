@@ -5,3 +5,8 @@ blog.db
 blog_sample.db
 .env
 media/
+__pycache__/
+*.pyc
+venv/
+*.db
+.env

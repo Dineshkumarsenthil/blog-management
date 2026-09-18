@@ -60,12 +60,15 @@ class LikeStatus(BaseModel):
     like_count: int
 
 
-# ---------- Post ----------
-# NOTE: PostCreate/PostUpdate are no longer used to parse the request body directly.
-# Because the create/update endpoints now accept multipart/form-data (to support an
-# optional image file), title/content are read as individual Form(...) fields in
-# main.py. These two classes are kept for reference/documentation of the expected
-# fields and are still used internally for validation.
+# ---------- Post Images (additional images beyond the cover image) ----------
+class PostImageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    post_id: int
+    image_url: str
+    created_at: datetime
+
 class PostCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     content: str = Field(..., min_length=1)
@@ -91,6 +94,7 @@ class PostOut(BaseModel):
 
 class PostDetailOut(PostOut):
     comments: List[CommentOut] = []
+    images: List[PostImageOut] = []
 
 
 class PaginatedPosts(BaseModel):
@@ -101,3 +105,45 @@ class PaginatedPosts(BaseModel):
     limit: int
     total_pages: int
     items: List[PostOut]
+
+
+# ---------- Subscription Plans ----------
+class SubscriptionPlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    price: float
+    max_posts: int
+    max_images_per_post: int
+    max_likes: int
+    max_comments: int
+    is_unlimited: bool
+
+
+class SubscribeRequest(BaseModel):
+    plan_name: str = Field(..., description="One of: Basic, Premium, Pro")
+
+
+class BillingHistoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    plan_id: int
+    plan_name: Optional[str] = None
+    price: float
+    transaction_id: str
+    start_date: datetime
+    end_date: datetime
+    invoice_url: Optional[str] = None
+    created_at: datetime
+
+
+class UsageOut(BaseModel):
+    """Current usage vs. plan limits, for GET /subscriptions/me."""
+
+    plan: SubscriptionPlanOut
+    posts_used: int
+    likes_used: int
+    comments_used: int
