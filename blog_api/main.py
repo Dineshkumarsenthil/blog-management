@@ -23,7 +23,7 @@ import models
 import schemas
 import subscriptions
 from database import Base, SessionLocal, engine, get_db
-from notifications import notify_new_comment, notify_new_like
+from services.notification_service import notify_comment, notify_like
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
 
 # Create tables
@@ -414,7 +414,7 @@ def add_comment(
         owner = db.query(models.User).filter(models.User.id == post.author_id).first()
         if owner:
             background_tasks.add_task(
-                notify_new_comment, owner.email, post.title, current_user.username
+                notify_comment, owner.email, post.title, current_user.username
             )
 
     out = schemas.CommentOut.model_validate(new_comment)
@@ -474,7 +474,7 @@ def like_post(
         owner = db.query(models.User).filter(models.User.id == post.author_id).first()
         if owner:
             background_tasks.add_task(
-                notify_new_like, owner.email, post.title, current_user.username
+                notify_like, owner.email, post.title, current_user.username
             )
 
     like_count = db.query(func.count(models.Like.id)).filter(

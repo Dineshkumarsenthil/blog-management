@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+venv/
+blog.db
+blog_sample.db
+.env
+media/
+db.sqlite3
