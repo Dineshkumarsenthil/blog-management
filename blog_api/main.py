@@ -24,12 +24,11 @@ import schemas
 import subscriptions
 from database import Base, SessionLocal, engine, get_db
 from services.notification_service import notify_comment, notify_like
+from services.dashboard_service import get_user_dashboard  # NEW
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
-# Seed the three subscription plans (Basic/Premium/Pro) if they don't exist yet.
 with SessionLocal() as _db:
     subscriptions.seed_plans(_db)
 
@@ -40,13 +39,12 @@ app = FastAPI(
     version="1.2.0",
 )
 
-# Serve uploaded post images and generated invoices at /media/...
+
 app.mount("/media", StaticFiles(directory=str(MEDIA_ROOT)), name="media")
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --------------------------------------------------------------------------
-# Admin dashboard (Django-admin-style) at /admin  # NEW
-# --------------------------------------------------------------------------
+
 admin = Admin(app, engine)
 
 
@@ -102,9 +100,6 @@ admin.add_view(SubscriptionPlanAdmin)
 admin.add_view(BillingHistoryAdmin)
 
 
-# --------------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------------
 def get_post_or_404(db: Session, post_id: int) -> models.Post:
     post = db.query(models.Post).filter(models.Post.id == post_id).first()
     if not post:
@@ -130,10 +125,6 @@ def serialize_post(db: Session, post: models.Post) -> schemas.PostOut:
         image_url=post.image,
     )
 
-
-# --------------------------------------------------------------------------
-# Auth routes
-# --------------------------------------------------------------------------
 @app.post("/auth/register", response_model=schemas.UserOut, tags=["Auth"], status_code=201)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = (
@@ -165,7 +156,6 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
         )
     db.refresh(new_user)
 
-    # Every user starts on the Basic plan until they subscribe to something else.
     basic_plan = db.query(models.SubscriptionPlan).filter_by(name="Basic").first()
     if basic_plan:
         new_user.plan_id = basic_plan.id
@@ -187,10 +177,6 @@ def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
     access_token = auth.create_access_token(data={"sub": str(user.id)})
     return schemas.Token(access_token=access_token)
 
-
-# --------------------------------------------------------------------------
-# Post routes
-# --------------------------------------------------------------------------
 @app.post("/posts", response_model=schemas.PostOut, tags=["Posts"], status_code=201)
 def create_post(
     title: str = Form(..., min_length=1, max_length=200),
@@ -382,10 +368,6 @@ def add_post_image(
         created_at=new_image.created_at,
     )
 
-
-# --------------------------------------------------------------------------
-# Comment routes
-# --------------------------------------------------------------------------
 @app.post(
     "/posts/{post_id}/comments",
     response_model=schemas.CommentOut,
@@ -409,7 +391,7 @@ def add_comment(
     db.commit()
     db.refresh(new_comment)
 
-    # Notify the post owner (skip if commenting on your own post)
+
     if post.author_id != current_user.id:
         owner = db.query(models.User).filter(models.User.id == post.author_id).first()
         if owner:
@@ -442,9 +424,6 @@ def list_comments(post_id: int, db: Session = Depends(get_db)):
     return result
 
 
-# --------------------------------------------------------------------------
-# Like routes
-# --------------------------------------------------------------------------
 @app.post("/posts/{post_id}/like", response_model=schemas.LikeStatus, tags=["Likes"])
 def like_post(
     post_id: int,
@@ -513,10 +492,6 @@ def unlike_post(
 def root():
     return {"message": "Blog Management API is running. Visit /docs for Swagger UI."}
 
-
-# --------------------------------------------------------------------------
-# Subscription & Billing routes
-# --------------------------------------------------------------------------
 def _billing_out(b: models.BillingHistory) -> schemas.BillingHistoryOut:
     return schemas.BillingHistoryOut(
         id=b.id,
@@ -590,3 +565,12 @@ def my_billing_history(
 def all_billing_history(db: Session = Depends(get_db)):
     rows = db.query(models.BillingHistory).order_by(models.BillingHistory.created_at.desc()).all()
     return [_billing_out(b) for b in rows]
+
+
+@app.get("/user/dashboard", tags=["Dashboard"])
+def user_dashboard(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Current user's activity stats: posts, comments made, likes received, per-post breakdown."""
+    return get_user_dashboard(db, current_user)

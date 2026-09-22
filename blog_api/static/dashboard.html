@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your Dashboard — Blog Management API</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --card: #131722;
+    --card-border: #232838;
+    --accent: #7c5cff;
+    --accent-2: #22d3ee;
+    --text: #e8eaf0;
+    --text-dim: #8b93a7;
+    --success: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(circle at 20% -10%, #1c1836 0%, var(--bg) 55%);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header { margin-bottom: 32px; }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 700;
+  }
+  .sub { color: var(--text-dim); font-size: 14px; }
+
+  .token-row {
+    display: flex; gap: 10px; margin: 20px 0 32px; flex-wrap: wrap;
+  }
+  .token-row input {
+    flex: 1; min-width: 260px;
+    background: var(--card); border: 1px solid var(--card-border);
+    color: var(--text); padding: 12px 14px; border-radius: 10px;
+    font-size: 13px; outline: none;
+  }
+  .token-row input:focus { border-color: var(--accent); }
+  .token-row button {
+    background: linear-gradient(90deg, var(--accent), #a78bfa);
+    border: none; color: white; padding: 12px 22px; border-radius: 10px;
+    font-weight: 600; cursor: pointer; font-size: 14px;
+  }
+  .token-row button:hover { opacity: 0.9; }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 18px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    background: linear-gradient(160deg, var(--card), #171c2b);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 22px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::after {
+    content: "";
+    position: absolute; top: -30px; right: -30px;
+    width: 100px; height: 100px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(124,92,255,0.25), transparent 70%);
+  }
+  .stat-label { color: var(--text-dim); font-size: 13px; margin-bottom: 8px; }
+  .stat-value { font-size: 32px; font-weight: 700; }
+
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 800px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 22px;
+  }
+  .chart-card h3 { margin: 0 0 16px; font-size: 15px; color: var(--text-dim); font-weight: 600; }
+  .empty { color: var(--text-dim); text-align: center; padding: 60px 20px; font-size: 14px; }
+  .status { font-size: 13px; margin-top: 6px; }
+  .status.err { color: #f87171; }
+  .status.ok { color: var(--success); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Your Activity Dashboard</h1>
+    <div class="sub">Posts, comments, and likes — at a glance.</div>
+  </header>
+
+  <div class="token-row">
+    <input id="tokenInput" type="text" placeholder="Paste your Bearer JWT token here..." />
+    <button onclick="loadDashboard()">Load Dashboard</button>
+  </div>
+  <div id="status" class="status"></div>
+
+  <div id="content" style="display:none;">
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Posts</div>
+        <div class="stat-value" id="totalPosts">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Comments Made</div>
+        <div class="stat-value" id="totalComments">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Likes Received</div>
+        <div class="stat-value" id="totalLikes">0</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Likes &amp; Comments per Post</h3>
+        <canvas id="barChart" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Likes Distribution</h3>
+        <canvas id="pieChart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let barChartInstance = null;
+let pieChartInstance = null;
+
+async function loadDashboard() {
+  const token = document.getElementById('tokenInput').value.trim();
+  const statusEl = document.getElementById('status');
+  const contentEl = document.getElementById('content');
+
+  if (!token) {
+    statusEl.textContent = 'Please paste a valid JWT token.';
+    statusEl.className = 'status err';
+    return;
+  }
+
+  statusEl.textContent = 'Loading...';
+  statusEl.className = 'status';
+
+  try {
+    const res = await fetch('/user/dashboard', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) {
+      throw new Error('Request failed with status ' + res.status);
+    }
+    const data = await res.json();
+
+    statusEl.textContent = 'Loaded successfully.';
+    statusEl.className = 'status ok';
+    contentEl.style.display = 'block';
+
+    document.getElementById('totalPosts').textContent = data.total_posts;
+    document.getElementById('totalComments').textContent = data.total_comments;
+    document.getElementById('totalLikes').textContent = data.total_likes_received;
+
+    const labels = data.posts.map(p => p.title.length > 18 ? p.title.slice(0, 18) + '…' : p.title);
+    const likes = data.posts.map(p => p.likes);
+    const comments = data.posts.map(p => p.comments);
+
+    if (barChartInstance) barChartInstance.destroy();
+    if (pieChartInstance) pieChartInstance.destroy();
+
+    const barCtx = document.getElementById('barChart').getContext('2d');
+    barChartInstance = new Chart(barCtx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Likes', data: likes, backgroundColor: '#7c5cff', borderRadius: 6 },
+          { label: 'Comments', data: comments, backgroundColor: '#22d3ee', borderRadius: 6 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#e8eaf0' } } },
+        scales: {
+          x: { ticks: { color: '#8b93a7' }, grid: { color: '#232838' } },
+          y: { ticks: { color: '#8b93a7' }, grid: { color: '#232838' }, beginAtZero: true }
+        }
+      }
+    });
+
+    const pieCtx = document.getElementById('pieChart').getContext('2d');
+    pieChartInstance = new Chart(pieCtx, {
+      type: 'pie',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: likes,
+          backgroundColor: ['#7c5cff', '#22d3ee', '#34d399', '#f472b6', '#fbbf24', '#60a5fa', '#f87171']
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#e8eaf0' }, position: 'bottom' } }
+      }
+    });
+
+  } catch (err) {
+    statusEl.textContent = 'Failed to load: ' + err.message;
+    statusEl.className = 'status err';
+    contentEl.style.display = 'none';
+  }
+}
+</script>
+</body>
+</html>
