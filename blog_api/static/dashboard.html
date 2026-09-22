@@ -4,7 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Your Dashboard — Blog Management API</title>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
 <style>
   :root {
     --bg: #0b0e14;
@@ -16,7 +18,11 @@
     --text-dim: #8b93a7;
     --success: #34d399;
   }
-  * { box-sizing: border-box; }
+
+  * {
+    box-sizing: border-box;
+  }
+
   body {
     margin: 0;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -25,8 +31,16 @@
     min-height: 100vh;
     padding: 40px 24px 80px;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; }
-  header { margin-bottom: 32px; }
+
+  .wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 32px;
+  }
+
   h1 {
     font-size: 28px;
     margin: 0 0 6px;
@@ -36,24 +50,54 @@
     color: transparent;
     font-weight: 700;
   }
-  .sub { color: var(--text-dim); font-size: 14px; }
+
+  .sub {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
 
   .token-row {
-    display: flex; gap: 10px; margin: 20px 0 32px; flex-wrap: wrap;
+    display: flex;
+    gap: 10px;
+    margin: 20px 0 32px;
+    flex-wrap: wrap;
   }
+
   .token-row input {
-    flex: 1; min-width: 260px;
-    background: var(--card); border: 1px solid var(--card-border);
-    color: var(--text); padding: 12px 14px; border-radius: 10px;
-    font-size: 13px; outline: none;
+    flex: 1;
+    min-width: 260px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    outline: none;
   }
-  .token-row input:focus { border-color: var(--accent); }
+
+  .token-row input:focus {
+    border-color: var(--accent);
+  }
+
   .token-row button {
     background: linear-gradient(90deg, var(--accent), #a78bfa);
-    border: none; color: white; padding: 12px 22px; border-radius: 10px;
-    font-weight: 600; cursor: pointer; font-size: 14px;
+    border: none;
+    color: white;
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
   }
-  .token-row button:hover { opacity: 0.9; }
+
+  .token-row button:hover {
+    opacity: 0.9;
+  }
+
+  .token-row button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 
   .stat-grid {
     display: grid;
@@ -61,6 +105,7 @@
     gap: 18px;
     margin-bottom: 32px;
   }
+
   .stat-card {
     background: linear-gradient(160deg, var(--card), #171c2b);
     border: 1px solid var(--card-border);
@@ -69,21 +114,44 @@
     position: relative;
     overflow: hidden;
   }
+
   .stat-card::after {
     content: "";
-    position: absolute; top: -30px; right: -30px;
-    width: 100px; height: 100px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(124,92,255,0.25), transparent 70%);
+    position: absolute;
+    top: -30px;
+    right: -30px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      rgba(124,92,255,0.25),
+      transparent 70%
+    );
   }
-  .stat-label { color: var(--text-dim); font-size: 13px; margin-bottom: 8px; }
-  .stat-value { font-size: 32px; font-weight: 700; }
+
+  .stat-label {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 32px;
+    font-weight: 700;
+  }
 
   .charts-grid {
     display: grid;
     grid-template-columns: 1.3fr 1fr;
     gap: 20px;
   }
-  @media (max-width: 800px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  @media (max-width: 800px) {
+    .charts-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 
   .chart-card {
     background: var(--card);
@@ -91,66 +159,139 @@
     border-radius: 16px;
     padding: 22px;
   }
-  .chart-card h3 { margin: 0 0 16px; font-size: 15px; color: var(--text-dim); font-weight: 600; }
-  .empty { color: var(--text-dim); text-align: center; padding: 60px 20px; font-size: 14px; }
-  .status { font-size: 13px; margin-top: 6px; }
-  .status.err { color: #f87171; }
-  .status.ok { color: var(--success); }
+
+  .chart-card h3 {
+    margin: 0 0 16px;
+    font-size: 15px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  .chart-box {
+    position: relative;
+    height: 300px;
+  }
+
+  .status {
+    font-size: 13px;
+    margin-top: 6px;
+  }
+
+  .status.err {
+    color: #f87171;
+  }
+
+  .status.ok {
+    color: var(--success);
+  }
+
+  @media (max-width: 500px) {
+    body {
+      padding: 25px 15px 60px;
+    }
+
+    .token-row {
+      flex-direction: column;
+    }
+
+    .token-row input,
+    .token-row button {
+      width: 100%;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+  }
 </style>
 </head>
+
 <body>
+
 <div class="wrap">
+
   <header>
-    <h1>Your Activity Dashboard</h1>
+    <h1>Activity Dashboard</h1>
     <div class="sub">Posts, comments, and likes — at a glance.</div>
   </header>
 
   <div class="token-row">
-    <input id="tokenInput" type="text" placeholder="Paste your Bearer JWT token here..." />
-    <button onclick="loadDashboard()">Load Dashboard</button>
+    <input
+      id="tokenInput"
+      type="password"
+      placeholder="Paste your JWT token here..."
+      autocomplete="off"
+    />
+    <button id="loadButton" onclick="loadDashboard()">
+      Load Dashboard
+    </button>
   </div>
+
   <div id="status" class="status"></div>
 
   <div id="content" style="display:none;">
+
     <div class="stat-grid">
+
       <div class="stat-card">
         <div class="stat-label">Total Posts</div>
         <div class="stat-value" id="totalPosts">0</div>
       </div>
+
       <div class="stat-card">
         <div class="stat-label">Total Comments Made</div>
         <div class="stat-value" id="totalComments">0</div>
       </div>
+
       <div class="stat-card">
         <div class="stat-label">Total Likes Received</div>
         <div class="stat-value" id="totalLikes">0</div>
       </div>
+
     </div>
 
     <div class="charts-grid">
+
       <div class="chart-card">
         <h3>Likes &amp; Comments per Post</h3>
-        <canvas id="barChart" height="220"></canvas>
+        <div class="chart-box">
+          <canvas id="barChart"></canvas>
+        </div>
       </div>
+
       <div class="chart-card">
         <h3>Likes Distribution</h3>
-        <canvas id="pieChart" height="220"></canvas>
+        <div class="chart-box">
+          <canvas id="pieChart"></canvas>
+        </div>
       </div>
+
     </div>
   </div>
 </div>
 
 <script>
+
 let barChartInstance = null;
 let pieChartInstance = null;
 
 async function loadDashboard() {
-  const token = document.getElementById('tokenInput').value.trim();
-  const statusEl = document.getElementById('status');
-  const contentEl = document.getElementById('content');
+
+  const token =
+    document.getElementById('tokenInput').value.trim();
+
+  const statusEl =
+    document.getElementById('status');
+
+  const contentEl =
+    document.getElementById('content');
+
+  const loadButton =
+    document.getElementById('loadButton');
 
   if (!token) {
-    statusEl.textContent = 'Please paste a valid JWT token.';
+    statusEl.textContent =
+      'Please paste a valid JWT token.';
     statusEl.className = 'status err';
     return;
   }
@@ -158,72 +299,280 @@ async function loadDashboard() {
   statusEl.textContent = 'Loading...';
   statusEl.className = 'status';
 
+  loadButton.disabled = true;
+  loadButton.textContent = 'Loading...';
+
   try {
+
     const res = await fetch('/user/dashboard', {
-      headers: { 'Authorization': 'Bearer ' + token }
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/json'
+      }
     });
+
     if (!res.ok) {
-      throw new Error('Request failed with status ' + res.status);
+
+      if (res.status === 401) {
+        throw new Error('Unauthorized. Please check your JWT token.');
+      }
+
+      if (res.status === 403) {
+        throw new Error('Access denied.');
+      }
+
+      throw new Error(
+        'Request failed with status ' + res.status
+      );
     }
+
     const data = await res.json();
 
     statusEl.textContent = 'Loaded successfully.';
     statusEl.className = 'status ok';
+
     contentEl.style.display = 'block';
 
-    document.getElementById('totalPosts').textContent = data.total_posts;
-    document.getElementById('totalComments').textContent = data.total_comments;
-    document.getElementById('totalLikes').textContent = data.total_likes_received;
+    document.getElementById('totalPosts').textContent =
+      data.total_posts ?? 0;
 
-    const labels = data.posts.map(p => p.title.length > 18 ? p.title.slice(0, 18) + '…' : p.title);
-    const likes = data.posts.map(p => p.likes);
-    const comments = data.posts.map(p => p.comments);
+    document.getElementById('totalComments').textContent =
+      data.total_comments ?? 0;
 
-    if (barChartInstance) barChartInstance.destroy();
-    if (pieChartInstance) pieChartInstance.destroy();
+    document.getElementById('totalLikes').textContent =
+      data.total_likes_received ?? 0;
 
-    const barCtx = document.getElementById('barChart').getContext('2d');
-    barChartInstance = new Chart(barCtx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [
-          { label: 'Likes', data: likes, backgroundColor: '#7c5cff', borderRadius: 6 },
-          { label: 'Comments', data: comments, backgroundColor: '#22d3ee', borderRadius: 6 }
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { labels: { color: '#e8eaf0' } } },
-        scales: {
-          x: { ticks: { color: '#8b93a7' }, grid: { color: '#232838' } },
-          y: { ticks: { color: '#8b93a7' }, grid: { color: '#232838' }, beginAtZero: true }
-        }
-      }
+    const posts = Array.isArray(data.posts)
+      ? data.posts
+      : [];
+
+    if (barChartInstance) {
+      barChartInstance.destroy();
+    }
+
+    if (pieChartInstance) {
+      pieChartInstance.destroy();
+    }
+
+    if (posts.length === 0) {
+      return;
+    }
+
+    const fullTitles = posts.map(
+      p => p.title || 'Untitled Post'
+    );
+
+    const labels = posts.map(p => {
+      const title = p.title || 'Untitled Post';
+
+      return title.length > 15
+        ? title.slice(0, 15) + '…'
+        : title;
     });
 
-    const pieCtx = document.getElementById('pieChart').getContext('2d');
-    pieChartInstance = new Chart(pieCtx, {
-      type: 'pie',
+    const likes = posts.map(
+      p => Number(p.likes) || 0
+    );
+
+    const comments = posts.map(
+      p => Number(p.comments) || 0
+    );
+
+    const barCtx =
+      document.getElementById('barChart').getContext('2d');
+
+    barChartInstance = new Chart(barCtx, {
+
+      type: 'bar',
+
       data: {
         labels: labels,
+
+        datasets: [
+          {
+            label: 'Likes',
+            data: likes,
+            backgroundColor: '#7c5cff',
+            borderRadius: 6
+          },
+
+          {
+            label: 'Comments',
+            data: comments,
+            backgroundColor: '#22d3ee',
+            borderRadius: 6
+          }
+        ]
+      },
+
+      options: {
+
+        responsive: true,
+        maintainAspectRatio: false,
+
+        plugins: {
+
+          legend: {
+            labels: {
+              color: '#e8eaf0'
+            }
+          },
+
+          tooltip: {
+
+            callbacks: {
+
+              title: function(context) {
+                return fullTitles[
+                  context[0].dataIndex
+                ];
+              },
+
+              label: function(context) {
+                return (
+                  context.dataset.label +
+                  ': ' +
+                  context.raw
+                );
+              }
+
+            }
+
+          }
+
+        },
+
+        scales: {
+
+          x: {
+            ticks: {
+              color: '#8b93a7',
+              maxRotation: 45,
+              minRotation: 30
+            },
+
+            grid: {
+              color: '#232838'
+            }
+          },
+
+          y: {
+            ticks: {
+              color: '#8b93a7',
+              stepSize: 1
+            },
+
+            grid: {
+              color: '#232838'
+            },
+
+            beginAtZero: true
+          }
+
+        }
+
+      }
+
+    });
+
+    const pieCtx =
+      document.getElementById('pieChart').getContext('2d');
+
+    pieChartInstance = new Chart(pieCtx, {
+
+      type: 'pie',
+
+      data: {
+
+        labels: fullTitles,
+
         datasets: [{
           data: likes,
-          backgroundColor: ['#7c5cff', '#22d3ee', '#34d399', '#f472b6', '#fbbf24', '#60a5fa', '#f87171']
+
+          backgroundColor: [
+            '#7c5cff',
+            '#22d3ee',
+            '#34d399',
+            '#f472b6',
+            '#fbbf24',
+            '#60a5fa',
+            '#f87171'
+          ],
+
+          borderColor: '#131722',
+          borderWidth: 2
         }]
+
       },
+
       options: {
+
         responsive: true,
-        plugins: { legend: { labels: { color: '#e8eaf0' }, position: 'bottom' } }
+        maintainAspectRatio: false,
+
+        plugins: {
+
+          legend: {
+            labels: {
+              color: '#e8eaf0'
+            },
+
+            position: 'bottom'
+          },
+
+          tooltip: {
+
+            callbacks: {
+
+              label: function(context) {
+
+                return (
+                  context.label +
+                  ': ' +
+                  context.raw +
+                  ' likes'
+                );
+
+              }
+
+            }
+
+          }
+
+        }
+
       }
+
     });
 
   } catch (err) {
-    statusEl.textContent = 'Failed to load: ' + err.message;
+
+    statusEl.textContent =
+      'Failed to load: ' + err.message;
+
     statusEl.className = 'status err';
+
     contentEl.style.display = 'none';
+
+  } finally {
+
+    loadButton.disabled = false;
+    loadButton.textContent = 'Load Dashboard';
+
   }
 }
+
+document
+  .getElementById('tokenInput')
+  .addEventListener('keydown', function(event) {
+
+    if (event.key === 'Enter') {
+      loadDashboard();
+    }
+
+  });
+
 </script>
+
 </body>
 </html>
