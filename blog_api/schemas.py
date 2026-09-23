@@ -30,7 +30,6 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-# ---------- Comment ----------
 class CommentCreate(BaseModel):
     text: str = Field(..., min_length=1, max_length=1000)
 
@@ -59,8 +58,6 @@ class LikeStatus(BaseModel):
     liked: bool
     like_count: int
 
-
-# ---------- Post Images (additional images beyond the cover image) ----------
 class PostImageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -106,8 +103,6 @@ class PaginatedPosts(BaseModel):
     total_pages: int
     items: List[PostOut]
 
-
-# ---------- Subscription Plans ----------
 class SubscriptionPlanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -147,3 +142,19 @@ class UsageOut(BaseModel):
     posts_used: int
     likes_used: int
     comments_used: int
+
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    message: str
+    type: str
+    is_read: bool
+    created_at: datetime
+
+
+class NotificationSummary(BaseModel):
+    """Response wrapper for GET /notifications — list + unread count."""
+
+    unread_count: int
+    items: List[NotificationOut]

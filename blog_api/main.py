@@ -16,16 +16,17 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqladmin import Admin, ModelView  # NEW
+from sqladmin import Admin, ModelView 
 
 import auth
 import models
 import schemas
 import subscriptions
 from database import Base, SessionLocal, engine, get_db
-from services.notification_service import notify_comment, notify_like
+from services.notification_service import notify_comment, notify_like, create_notification
 from services.dashboard_service import get_user_dashboard  # NEW
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
+from routers import notifications
 
 Base.metadata.create_all(bind=engine)
 
@@ -398,6 +399,11 @@ def add_comment(
             background_tasks.add_task(
                 notify_comment, owner.email, post.title, current_user.username
             )
+            create_notification(
+                db, post.author_id,
+                f'{current_user.username} commented on your post "{post.title}"',
+                "comment"
+            )
 
     out = schemas.CommentOut.model_validate(new_comment)
     out.username = current_user.username
@@ -455,6 +461,11 @@ def like_post(
             background_tasks.add_task(
                 notify_like, owner.email, post.title, current_user.username
             )
+            create_notification(
+                db, post.author_id,
+                f'{current_user.username} liked your post "{post.title}"',
+                "like"
+            )
 
     like_count = db.query(func.count(models.Like.id)).filter(
         models.Like.post_id == post_id
@@ -488,10 +499,6 @@ def unlike_post(
     return schemas.LikeStatus(liked=False, like_count=like_count or 0)
 
 
-@app.get("/", tags=["Root"])
-def root():
-    return {"message": "Blog Management API is running. Visit /docs for Swagger UI."}
-
 def _billing_out(b: models.BillingHistory) -> schemas.BillingHistoryOut:
     return schemas.BillingHistoryOut(
         id=b.id,
@@ -521,6 +528,13 @@ def subscribe(
 ):
  
     billing = subscriptions.subscribe_user(db, current_user, body.plan_name)
+
+    create_notification(
+        db, current_user.id,
+        f'Your subscription to the "{body.plan_name}" plan is now active',
+        "subscription"
+    )
+
     return _billing_out(billing)
 
 
@@ -529,7 +543,7 @@ def my_subscription(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """Current user's active plan plus their live usage counts against its limits."""
+    
     plan = subscriptions.get_user_plan(db, current_user)
     posts_used = db.query(func.count(models.Post.id)).filter(
         models.Post.author_id == current_user.id
@@ -551,7 +565,7 @@ def my_billing_history(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """Current user's own billing/invoice history."""
+    
     rows = (
         db.query(models.BillingHistory)
         .filter(models.BillingHistory.user_id == current_user.id)
@@ -572,5 +586,12 @@ def user_dashboard(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """Current user's activity stats: posts, comments made, likes received, per-post breakdown."""
     return get_user_dashboard(db, current_user)
+
+
+app.include_router(notifications.router)
+
+
+@app.get("/", tags=["Root"])
+def root():
+    return {"message": "Blog Management API is running. Visit /docs for Swagger UI."}
