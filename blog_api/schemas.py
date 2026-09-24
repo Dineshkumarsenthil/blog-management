@@ -3,8 +3,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
-
-# ---------- User ----------
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -44,8 +42,6 @@ class CommentOut(BaseModel):
     created_at: datetime
     username: Optional[str] = None
 
-
-# ---------- Like ----------
 class LikeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -158,3 +154,17 @@ class NotificationSummary(BaseModel):
 
     unread_count: int
     items: List[NotificationOut]
+
+
+# ---------- AI Support Chat ----------
+class ChatMessageCreate(BaseModel):
+    message: str = Field(..., min_length=1, max_length=1000)
+
+
+class ChatMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    question: str
+    response: str
+    created_at: datetime

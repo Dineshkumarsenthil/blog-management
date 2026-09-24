@@ -26,7 +26,7 @@ from database import Base, SessionLocal, engine, get_db
 from services.notification_service import notify_comment, notify_like, create_notification
 from services.dashboard_service import get_user_dashboard  # NEW
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
-from routers import notifications
+from routers import notifications, ai_support
 
 Base.metadata.create_all(bind=engine)
 
@@ -590,6 +590,7 @@ def user_dashboard(
 
 
 app.include_router(notifications.router)
+app.include_router(ai_support.router)
 
 
 @app.get("/", tags=["Root"])

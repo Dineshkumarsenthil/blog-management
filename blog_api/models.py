@@ -35,6 +35,9 @@ class User(Base):
     notifications = relationship(
         "Notification", back_populates="user", cascade="all, delete-orphan"
     )
+    chat_logs = relationship(
+        "ChatLog", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Post(Base):
@@ -138,3 +141,17 @@ class Notification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="notifications")
+
+
+class ChatLog(Base):
+    """One row per AI support chat exchange."""
+
+    __tablename__ = "chat_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    question = Column(Text, nullable=False)
+    response = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="chat_logs")
