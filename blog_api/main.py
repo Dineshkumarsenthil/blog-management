@@ -1,5 +1,9 @@
-import math
+import os
 from typing import List, Optional
+import math
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import (
     BackgroundTasks,
@@ -13,6 +17,7 @@ from fastapi import (
     status,
 )
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,7 +31,7 @@ from database import Base, SessionLocal, engine, get_db
 from services.notification_service import notify_comment, notify_like, create_notification
 from services.dashboard_service import get_user_dashboard  # NEW
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
-from routers import notifications, ai_support
+from routers import notifications, ai_support, social_auth
 
 Base.metadata.create_all(bind=engine)
 
@@ -39,6 +44,8 @@ app = FastAPI(
     "and subscription-based feature limits.",
     version="1.2.0",
 )
+
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret"))
 
 
 app.mount("/media", StaticFiles(directory=str(MEDIA_ROOT)), name="media")
@@ -169,7 +176,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @app.post("/auth/login", response_model=schemas.Token, tags=["Auth"])
 def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == credentials.username).first()
-    if not user or not auth.verify_password(credentials.password, user.hashed_password):
+    if not user or not user.hashed_password or not auth.verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -591,6 +598,7 @@ def user_dashboard(
 
 app.include_router(notifications.router)
 app.include_router(ai_support.router)
+app.include_router(social_auth.router)
 
 
 @app.get("/", tags=["Root"])

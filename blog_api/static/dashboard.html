@@ -582,6 +582,16 @@
 
 <script>
 
+// Auto-fill token if redirected here with ?token=... (from login.html or Auth0 callback)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('token');
+  if (urlToken) {
+    document.getElementById('tokenInput').value = urlToken;
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+})();
+
 let barChartInstance = null;
 let pieChartInstance = null;
 
