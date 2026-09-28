@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
@@ -155,8 +155,6 @@ class NotificationSummary(BaseModel):
     unread_count: int
     items: List[NotificationOut]
 
-
-# ---------- AI Support Chat ----------
 class ChatMessageCreate(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
 
@@ -167,4 +165,37 @@ class ChatMessageOut(BaseModel):
     id: int
     question: str
     response: str
+    created_at: datetime
+
+PublishOption = Literal["draft", "publish", "schedule"]
+
+
+class BlogCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1)
+    scheduled_at: Optional[datetime] = None
+    publish_option: Optional[PublishOption] = Field(
+        None,
+        description="draft | publish | schedule. If omitted: publishes now when "
+        "scheduled_at is null, schedules when scheduled_at is set.",
+    )
+
+
+class BlogUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    content: Optional[str] = Field(None, min_length=1)
+    scheduled_at: Optional[datetime] = None
+    publish_option: Optional[PublishOption] = None
+
+
+class BlogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    content: str
+    author_id: int
+    status: str
+    scheduled_at: Optional[datetime] = None
+    published_at: Optional[datetime] = None
     created_at: datetime

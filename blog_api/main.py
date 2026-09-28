@@ -1,4 +1,7 @@
 import os
+import asyncio  
+from contextlib import asynccontextmanager  
+from datetime import datetime 
 from typing import List, Optional
 import math
 
@@ -29,20 +32,30 @@ import schemas
 import subscriptions
 from database import Base, SessionLocal, engine, get_db
 from services.notification_service import notify_comment, notify_like, create_notification
-from services.dashboard_service import get_user_dashboard  # NEW
+from services.dashboard_service import get_user_dashboard  
+from services.publish_scheduler import scheduler_loop, publish_due_posts 
 from uploads import MEDIA_ROOT, delete_post_image, save_post_image
-from routers import notifications, ai_support, social_auth
+from routers import notifications, ai_support, social_auth, blogs  
 
 Base.metadata.create_all(bind=engine)
 
 with SessionLocal() as _db:
     subscriptions.seed_plans(_db)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    publish_due_posts()  
+    task = asyncio.create_task(scheduler_loop())
+    yield
+    task.cancel()
+
+
 app = FastAPI(
     title="Blog Management API",
     description="A mini blogging system with posts, comments, likes, JWT auth, "
     "and subscription-based feature limits.",
     version="1.2.0",
+    lifespan=lifespan,  
 )
 
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-secret"))
@@ -66,7 +79,15 @@ class UserAdmin(ModelView, model=models.User):
 class PostAdmin(ModelView, model=models.Post):
     name = "Post"
     name_plural = "Posts"
-    column_list = [models.Post.id, models.Post.title, models.Post.author_id, models.Post.created_at]
+    column_list = [
+        models.Post.id,
+        models.Post.title,
+        models.Post.author_id,
+        models.Post.status,  
+        models.Post.scheduled_at,  
+        models.Post.published_at,  
+        models.Post.created_at,
+    ]
     column_searchable_list = [models.Post.title]
 
 
@@ -108,9 +129,10 @@ admin.add_view(SubscriptionPlanAdmin)
 admin.add_view(BillingHistoryAdmin)
 
 
-def get_post_or_404(db: Session, post_id: int) -> models.Post:
+# SCHEDULING: published_only hides drafts/scheduled posts from public endpoints
+def get_post_or_404(db: Session, post_id: int, published_only: bool = False) -> models.Post:
     post = db.query(models.Post).filter(models.Post.id == post_id).first()
-    if not post:
+    if not post or (published_only and post.status != "published"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     return post
 
@@ -199,7 +221,8 @@ def create_post(
     image_url = save_post_image(image)
 
     new_post = models.Post(
-        title=title, content=content, author_id=current_user.id, image=image_url
+        title=title, content=content, author_id=current_user.id, image=image_url,
+        status="published", published_at=datetime.now(),  
     )
     db.add(new_post)
     db.commit()
@@ -217,7 +240,7 @@ def list_posts(
     db: Session = Depends(get_db),
 ):
 
-    query = db.query(models.Post)
+    query = db.query(models.Post).filter(models.Post.status == "published")  
 
     if search:
         like_pattern = f"%{search}%"
@@ -260,7 +283,7 @@ def my_posts(
 
 @app.get("/posts/{post_id}", response_model=schemas.PostDetailOut, tags=["Posts"])
 def get_post(post_id: int, db: Session = Depends(get_db)):
-    post = get_post_or_404(db, post_id)
+    post = get_post_or_404(db, post_id, published_only=True)  
     base = serialize_post(db, post)
     comments = (
         db.query(models.Comment, models.User.username)
@@ -389,7 +412,7 @@ def add_comment(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    post = get_post_or_404(db, post_id)
+    post = get_post_or_404(db, post_id, published_only=True)  
     subscriptions.check_comment_limit(db, current_user)
 
     new_comment = models.Comment(
@@ -421,7 +444,7 @@ def add_comment(
     "/posts/{post_id}/comments", response_model=List[schemas.CommentOut], tags=["Comments"]
 )
 def list_comments(post_id: int, db: Session = Depends(get_db)):
-    get_post_or_404(db, post_id)
+    get_post_or_404(db, post_id, published_only=True)  
     comments = (
         db.query(models.Comment, models.User.username)
         .join(models.User, models.Comment.user_id == models.User.id)
@@ -444,7 +467,7 @@ def like_post(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    post = get_post_or_404(db, post_id)
+    post = get_post_or_404(db, post_id, published_only=True)  
 
     existing = (
         db.query(models.Like)
@@ -599,6 +622,7 @@ def user_dashboard(
 app.include_router(notifications.router)
 app.include_router(ai_support.router)
 app.include_router(social_auth.router)
+app.include_router(blogs.router)  
 
 
 @app.get("/", tags=["Root"])
